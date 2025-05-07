@@ -21,6 +21,7 @@ import subprocess
 import datetime
 from datetime import datetime, timedelta
 from collections import defaultdict
+import requests
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, CallbackContext
@@ -32,6 +33,9 @@ from transcription_handler import process_url_message, set_user_model, get_whisp
 from utils.bot_token import get_bot_token
 from utils.utils import print_startup_message, safe_split_message, hz_line
 from config_loader import ConfigLoader  # Import ConfigLoader
+
+# Import google.genai library
+from google.genai import GeminiClient
 
 # Configure basic logging
 logging.basicConfig(format='[%(asctime)s] %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -246,15 +250,6 @@ class TranscriberBot:
                     "❌ No valid URL detected in your message. "
                     "Please send a message that includes a valid URL. If you need help, type: /help"
                 )
-
-    # async def process_queue(self):
-    #     while True:
-    #         message_text, bot, update = await self.task_queue.get()
-    #         async with TranscriberBot.processing_lock:  # Use the class-level lock
-    #             user_id = update.effective_user.id
-    #             model = get_whisper_model(user_id)
-    #             await process_url_message(message_text, bot, update, model)
-    #         self.task_queue.task_done()
 
     async def process_queue(self):
         while True:
@@ -939,6 +934,32 @@ class TranscriberBot:
                 else:
                     logger.error("Restart on failure is disabled. Exiting...")
                     break
+
+    async def send_to_gemini(self, transcribed_message, chat_history):
+        """
+        Send the transcribed message to AI (Gemini) and receive a response.
+        """
+        try:
+            gemini_client = GeminiClient(api_key=config.get('GeminiSettings', 'api_key'))
+            gemini_response = gemini_client.send_message(transcribed_message, context=chat_history)
+            return gemini_response
+
+        except Exception as e:
+            logger.error(f"Failed to send message to Gemini: {e}")
+            return "Error: Could not get a response from Gemini."
+
+    async def get_chat_history(self, user_id):
+        """
+        Retrieve the chat history for a user.
+        """
+        try:
+            # Assuming chat history is stored in a dictionary
+            chat_history = self.user_chat_history.get(user_id, [])
+            return chat_history
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve chat history for user {user_id}: {e}")
+            return []
 
 if __name__ == '__main__':
     print_startup_message(version_number)  # Print startup message
